@@ -17,6 +17,9 @@ import tempfile
 import requests
 import sqlite3
 import winsound
+import subprocess
+import contextlib
+import io
 from datetime import datetime
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -46,6 +49,28 @@ def init_db():
             status TEXT DEFAULT 'pendente'
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS atalhos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE,
+            url TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memoria_longo_prazo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            informacao TEXT NOT NULL
+        )
+    """)
+    # Links iniciais passados pelo Wallison
+    atalhos_iniciais = [
+        ('suporte', 'https://meganet-suport-git-main-wallison-rangels-projects.vercel.app/'),
+        ('atlaz', 'https://meganett.atlaz.com.br/admin'),
+        ('rede mega', 'https://meganett.atlaz.com.br/admin'),
+        ('flash monitor', 'https://flashmonitor.com.br') # Exemplo se tiver
+    ]
+    for n, u in atalhos_iniciais:
+        cursor.execute("INSERT OR IGNORE INTO atalhos (nome, url) VALUES (?, ?)", (n, u))
     conn.commit()
     conn.close()
 
@@ -131,43 +156,223 @@ def skill_controlar_midia(acao):
         return "Comando enviado."
     except: return "Erro mídia."
 
+def skill_adicionar_atalho(nome, url):
+    try:
+        conn = sqlite3.connect(AGENDA_DB)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO atalhos (nome, url) VALUES (?, ?)", (nome.lower(), url))
+        conn.commit(); conn.close()
+        return f"Link de {nome} gravado na memória base."
+    except Exception as e: return f"Falha ao gravar memória: {e}"
+
+def skill_salvar_memoria(info):
+    try:
+        conn = sqlite3.connect(AGENDA_DB)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO memoria_longo_prazo (informacao) VALUES (?)", (info,))
+        conn.commit(); conn.close()
+        return f"Informação gravada na memória de longo prazo: {info}"
+    except Exception as e: return f"Falha ao gravar memória: {e}"
+
+def skill_abrir_atalho(nome, url_sugerido=""):
+    try:
+        # 1. Checa a memória principal do usuário
+        conn = sqlite3.connect(AGENDA_DB)
+        cursor = conn.cursor()
+        cursor.execute("SELECT url FROM atalhos WHERE nome LIKE ?", (f"%{nome.lower()}%",))
+        res = cursor.fetchone(); conn.close()
+        
+        if res:
+            webbrowser.open(res[0])
+            return f"Abrindo {nome} direto da nossa memória."
+        elif url_sugerido and str(url_sugerido).startswith("http"):
+            # 2. IA encontrou o link publicamente
+            webbrowser.open(url_sugerido)
+            return f"Não tinha na memória, mas ajustei os protocolos e estou abrindo o site do {nome}."
+        else:
+            # 3. Fallback inteligente (Google/Direct)
+            termo = nome.lower().replace(" ", "")
+            webbrowser.open(f"https://{termo}.com")
+            return f"Tentando rota de acesso direto para {nome}."
+    except Exception as e: return f"Erro ao acessar navegadores: {e}"
+
+def skill_run_cmd(command):
+    try:
+        print(f"[SYSTEM EXEC] Terminal Rota Autorizada: {command[:200]}")
+        resultado = subprocess.run(["powershell", "-Command", command], capture_output=True, text=True, timeout=40)
+        out = resultado.stdout if resultado.stdout else resultado.stderr
+        return out if out else "Comando powershell executado silenciosamente e com sucesso."
+    except Exception as e:
+        return f"Erro Crítico de Console: {e}"
+
+def skill_python_exec(codigo):
+    output = io.StringIO()
+    try:
+        print("[SYSTEM EXEC] Executando bloco Python interno.")
+        with contextlib.redirect_stdout(output):
+            exec(codigo, globals())
+        val = output.getvalue()
+        return val if val else "Script rodou com sucesso sem gerar prints na tela."
+    except Exception as e:
+        return f"Exceção no kernel Python: {e}"
+
 class MegaAgent:
     def __init__(self, config):
         self.config = config
-        self.llm = ChatGroq(api_key=config["apiKey"], model="llama-3.3-70b-versatile", temperature=0.3)
+        self.llm = ChatGroq(api_key=config["apiKey"], model="llama-3.3-70b-versatile", temperature=0.2)
+        self.history = []
     
-    def process_command(self, command_text):
-        cmd = command_text.lower().strip()
-        atalhos = {
-            "suporte": "https://meganet-suport-git-main-wallison-rangels-projects.vercel.app/",
-            "rede mega": "https://meganett.atlaz.com.br/admin",
-            "atlaz": "https://meganett.atlaz.com.br/admin"
-        }
-        for kw, url in atalhos.items():
-            if kw in cmd:
-                webbrowser.open(url)
-                return f"Iniciando acesso ao portal de {kw}, Sr. Wallison."
+    def get_memoria_links(self):
         try:
-            prompt = f"""[SYSTEM] Você é o MEGA Executive, IA pessoal de Wallison Rangel.
-Regras: Responda SEMPRE em Português (pt-BR). Use JSON:
+            conn = sqlite3.connect(AGENDA_DB)
+            cursor = conn.cursor()
+            cursor.execute("SELECT nome FROM atalhos")
+            links = [row[0] for row in cursor.fetchall()]
+            conn.close()
+            return ", ".join(links)
+        except: return "Nenhum"
+
+    def get_memoria_longo_prazo(self):
+        try:
+            conn = sqlite3.connect(AGENDA_DB)
+            cursor = conn.cursor()
+            cursor.execute("SELECT informacao FROM memoria_longo_prazo")
+            infos = [row[0] for row in cursor.fetchall()]
+            conn.close()
+            return " | ".join(infos)
+        except: return "Nenhum"
+
+    def process_command(self, command_text):
+        if not hasattr(self, 'history'):
+            self.history = []
+            
+        self.history.append(HumanMessage(content=command_text))
+        
+        # Limita histórico base para não estourar tokens
+        if len(self.history) > 16:
+            self.history = self.history[-16:]
+
+        links_salvos = self.get_memoria_links()
+        memorias_gerais = self.get_memoria_longo_prazo()
+        
+        # Variáveis Fixas de Sistema Real
+        user_profile = os.environ.get("USERPROFILE", "C:\\Users")
+        
+        tentativas_de_loop = 0
+
+        while True:
+            tentativas_de_loop += 1
+            if tentativas_de_loop > 6:
+                return "Sr., demorei demais processando isso. Estou abortando para evitar falhas sistêmicas."
+                
+            prompt = f"""[SYSTEM] Você é o MEGA Executive, um Sistema Autônomo e IA de nível kernel do Wallison Rangel.
+Você agora tem capacidade de OpenInterpreter: pode ler e executar comandos livremente no computador dele via Poweshell ou executar Python abstrato.
+Caminho Oficial do Sistema do Usuário: {user_profile}  (ATENÇÃO: Este caminho contém espaços. SEMPRE use aspas no PowerShell, ex: mkdir "{user_profile}\\Desktop\\MegaA")
+Links salvos: {links_salvos} | Fatos Importantes: {memorias_gerais}.
+
+-> REGRAS DE AUTONOMIA E SEGURANÇA (LEIA COM ATENÇÃO): <-
+Se você precisar CRIAR pastas, MODIFICAR arquivos, INSTALAR dependências ou EXCLUIR alguma coisa, VOCÊ DEVE OBRIGATORIAMENTE usar o skill "ask_permission" ANTES de executar o comando. Não rode o terminal antes da aprovação do Wallison.
+Se ele te der o comando (ex: "pode fazer, crie a pasta"), no seu próximo turno você usará "run_cmd" e passará o comando no terminal.
+Comandos de leitura (dir, ler arquivo com type, ping, consultar info base) ou execução de scripts Python não-destrutivos não precisam de permissão.
+
+-> REGRAS DE AUTOMAÇÃO WEB (SELENIUM): <-
+Se o usuário pedir para PREENCHER FORMULÁRIOS, LER CÓDIGO HTML ou NAVEGAR de forma complexa, use "run_python" e escreva um script com `selenium`.
+1) Inicie o navegador e abra o site: `from selenium import webdriver; from selenium.webdriver.common.by import By; driver = webdriver.Chrome(); driver.get('URL')`
+2) O interpretador persiste as variáveis na área local da memória (global). Ou seja, se você já criou o `driver` num turno anterior, NAS PRÓXIMAS EXECUÇÕES PODE APENAS USÁ-LO diretamente! **NUNCA CHAME webdriver.Chrome() COM O NAVEGADOR JÁ ABERTO!** Evite sobreposição. Se der erro NameError 'driver', inicie-o.
+3) Para descobrir os campos ocultos: rode `print(driver.page_source)` para ler o HTML no retorno do Log, ou tente localizar imprimindo nomes/IDs.
+4) Para interagir: rode um Python interagindo de fato: `driver.find_element(By.ID, 'x').send_keys('dado')` seguido de `driver.find_element(By.XPATH, 'xx').click()`.
+5) NÃO faça `driver.quit()`, mantenha aberto pro usuário visualizar.
+
+-> LISTA DE SKILLS E FORMATO JSON OBRIGATÓRIO: <-
+- CHAT: {{ "skill": "none", "response": "sua resposta final falada de forma curta..." }} (Use para falar e encerrar turno)
+- ASK_PERMISSION: {{ "skill": "ask_permission", "command_intent": "criar app", "response": "Sr, preciso abrir o powershell para iniciar o app. Autoriza?" }} (Encerra o turno aguardando resposta)
+- TERMINAL_CMD: {{ "skill": "run_cmd", "command": "comando powershell/cmd válido no windows usando aspas em caminhos com espaco" }} (Fica no loop invisível e lê o resultado no log)
+- PYTHON_RUN: {{ "skill": "run_python", "code": "print('hello')" }} (Fica no loop invisível)
+- BROWSER_OPEN_LINK: {{ "skill": "open_link", "name": "...", "url": "https://..." }} (Encerra turno com Acesso Concedido)
 - SEARCH: {{ "skill": "search", "query": "..." }}
 - AGENDA_ADD: {{ "skill": "agenda_add", "text": "...", "time": "..." }}
-- AGENDA_LIST: {{ "skill": "agenda_list" }}
+- MEMORY_SAVE_FACT: {{ "skill": "save_fact", "fact": "..." }}
+- MEMORY_SAVE_LINK: {{ "skill": "save_link", "name": "...", "url": "http..." }}
 - MEDIA: {{ "skill": "media", "action": "pause|play|next|prev" }}
-- CHAT: {{ "skill": "none", "response": "..." }}
-Horário: {datetime.now().strftime('%H:%M:%S')}
-Input: "{command_text}" """
-            resp = self.llm.invoke([HumanMessage(content=prompt)])
-            data = json.loads(resp.content.replace('```json', '').replace('```', '').strip())
-            skill = data.get("skill")
-            if skill == "search":
-                res = skill_pesquisar_web(data.get("query"))
-                return self.llm.invoke([SystemMessage(content="Resuma em pt-BR."), HumanMessage(content=res)]).content
-            elif skill == "agenda_add": return skill_agenda_lembrete(data.get("text"), data.get("time"))
-            elif skill == "agenda_list": return skill_listar_agenda()
-            elif skill == "media": return skill_controlar_midia(data.get("action"))
-            return data.get("response", "Pronto.")
-        except: return "Desculpe, Sr. Wallison, falha no núcleo."
+
+Horário Atual: {datetime.now().strftime('%H:%M:%S')}"""
+
+            messages = [SystemMessage(content=prompt)] + self.history
+
+            try:
+                resp = self.llm.invoke(messages)
+                self.history.append(resp) # Salva a própria saída para manter a coesão
+                
+                raw_text = resp.content.strip()
+                # Tenta extrair qualquer coisa entre chaves se houver Markdown
+                import re
+                match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                if match:
+                    json_str = match.group(0)
+                else:
+                    json_str = raw_text
+
+                try:
+                    data = json.loads(json_str)
+                except json.JSONDecodeError as je:
+                    print(f"[JSON FIX LOOP] Erro na formatação. Forçando auto-correção...")
+                    self.history.append(SystemMessage(content="ATENÇÃO: Sua última resposta NÃO foi um JSON válido. Por favor, corrija e responda EXATAMENTE e APENAS no formato { \"skill\": \"...\" } sem textos adicionais."))
+                    continue
+                    
+                skill = data.get("skill")
+                
+                print(f"[REASONING] A IA optou pela skill: '{skill}'")
+
+                # -> Interruções de Turno (Devolvem áudio e pausam) <-
+                if skill == "none":
+                    return data.get("response", "Finalizado.")
+                elif skill == "ask_permission":
+                    return data.get("response", "Me dê permissão para rodar a rotina de terminal, senhor.")
+                elif skill == "open_link":
+                    res = skill_abrir_atalho(data.get("name"), data.get("url", ""))
+                    return f"Portas abertas. {res}"
+                elif skill == "save_fact":
+                    return skill_salvar_memoria(data.get("fact"))
+                elif skill == "save_link":
+                    return skill_adicionar_atalho(data.get("name"), data.get("url"))
+                elif skill == "media":
+                    return skill_controlar_midia(data.get("action"))
+                elif skill == "agenda_add":
+                    return skill_agenda_lembrete(data.get("text"), data.get("time"))
+                
+                # -> Loop Invisível Autônomo (Injeta a resposta do comando de volta na história) <-
+                elif skill == "run_cmd":
+                    cmd = data.get("command", "")
+                    out = skill_run_cmd(cmd)
+                    self.history.append(SystemMessage(content=f"> [Powershell Output de `{cmd}`]:\n{out[:1200]}"))
+                    # Deixa rodar o While novamente para que o modelo LEIA o output e tome próxima decisão
+                    continue
+
+                elif skill == "run_python":
+                    code = data.get("code", "")
+                    out = skill_python_exec(code)
+                    self.history.append(SystemMessage(content=f"> [Python Output]:\n{out[:2000]}"))
+                    # Continua o loop
+                    continue
+
+                elif skill == "search":
+                    query = data.get("query", "")
+                    out = skill_pesquisar_web(query)
+                    self.history.append(SystemMessage(content=f"> [DuckDuckGo Output]:\n{out[:1200]}"))
+                    # Continua o loop
+                    continue
+                
+                elif skill == "agenda_list":
+                    out = skill_listar_agenda()
+                    self.history.append(SystemMessage(content=f"> [Agenda Lida]:\n{out}"))
+                    continue
+
+                else:
+                    return data.get("response", "Matriz instável. Comandos autônomos falharam.")
+
+            except Exception as e:
+                print(f"[ERRO DE ROTA COGNITIVA] {e}")
+                return "Sr., ocorreu uma falha grave na interpretação de raciocínio. Loop abortado por segurança."
 
 mega_agent_instance = None
 
@@ -222,8 +427,8 @@ def voice_listener_loop(loop):
             time.sleep(0.5); continue
         try:
             with sd.InputStream(channels=1, samplerate=fs) as stream:
-                # ETAPA 1: Monitoramento Silencioso (1.5s)
-                data, _ = stream.read(int(1.5 * fs)) 
+                # ETAPA 1: Monitoramento Silencioso (2.0s para pegar chamados mais longos)
+                data, _ = stream.read(int(2.0 * fs)) 
                 vol = np.linalg.norm(data) / np.sqrt(len(data))
                 
                 if vol > threshold:
@@ -232,14 +437,17 @@ def voice_listener_loop(loop):
                     wavfile.write(p1, fs, data)
                     
                     files = {"file": open(p1, "rb")}
+                    # Prompt direciona o Whisper a entender que o contexto tem 'Mega'
                     resp = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", 
                                         headers={"Authorization": f"Bearer {current_config['apiKey']}"}, 
-                                        files=files, data={"model": "whisper-large-v3-turbo", "language": "pt"})
+                                        files=files, data={"model": "whisper-large-v3-turbo", "language": "pt", "prompt": "Mega"})
                     files["file"].close(); os.unlink(p1)
 
                     if resp.status_code == 200:
-                        text = resp.json().get("text", "").lower()
-                        wake_words = ["mega", "meiga", "meca", "amiga", "hey"]
+                        text = resp.json().get("text", "").lower().strip()
+                        if text: print(f"[ESCUTA] {text}")
+                        # Dicionario fonetico expandido ao extremo:
+                        wake_words = ["mega", "meiga", "meca", "nega", "amiga", "hey", "még", "vegas", "mika", "neca", "brega"]
                         
                         if any(w in text for w in wake_words):
                             print("[!] MEGA DESPERTO. Ouvindo comando...")
@@ -250,15 +458,17 @@ def voice_listener_loop(loop):
                             try: winsound.Beep(800, 150); winsound.Beep(1200, 150)
                             except: pass
                             
-                            # ETAPA 2: Escuta de Comando (5s)
-                            cmd_data, _ = stream.read(int(5.0 * fs))
+                            # ETAPA 2: Escuta de Comando Expandida (8s)
+                            cmd_data, _ = stream.read(int(8.0 * fs))
                             fd, p2 = tempfile.mkstemp(suffix=".wav"); os.close(fd)
                             wavfile.write(p2, fs, cmd_data)
                             
                             files = {"file": open(p2, "rb")}
+                            # Prompt com comandos de contexto pro Whisper nao inventar palavras
+                            context_prompt = "Mega, Wallison, pesquisar, agendar, lembrete, YouTube, música, suporte, tocar."
                             resp = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", 
                                                 headers={"Authorization": f"Bearer {current_config['apiKey']}"}, 
-                                                files=files, data={"model": "whisper-large-v3-turbo", "language": "pt"})
+                                                files=files, data={"model": "whisper-large-v3-turbo", "language": "pt", "prompt": context_prompt})
                             files["file"].close(); os.unlink(p2)
                             
                             if resp.status_code == 200:

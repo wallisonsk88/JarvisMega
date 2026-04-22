@@ -32,6 +32,9 @@ function App() {
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef(null);
 
+  // Interrupt Audio Ref
+  const currentAudioRef = useRef(null);
+
   // Audio Context Ref
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
@@ -46,6 +49,10 @@ function App() {
           const data = JSON.parse(event.data);
           if (data.type === 'wake_detected') {
             setIsListening(true);
+            if (currentAudioRef.current) {
+              currentAudioRef.current.pause();
+              currentAudioRef.current.currentTime = 0;
+            }
             setTimeout(() => setIsListening(false), 7000);
           }
           if (data.type === 'voice_response') {
@@ -124,7 +131,11 @@ function App() {
       if (audioContextRef.current?.state === 'suspended') {
         await audioContextRef.current.resume();
       }
+      if (currentAudioRef.current) {
+         currentAudioRef.current.pause();
+      }
       const audio = new Audio(`data:audio/mp3;base64,${base64}`);
+      currentAudioRef.current = audio;
       audio.volume = voiceVolume;
       if (audioContextRef.current && analyserRef.current) {
         const source = audioContextRef.current.createMediaElementSource(audio);
@@ -267,20 +278,11 @@ function App() {
               </div>
           </div>
 
-          {/* Chat Stream (Clean Layout) */}
-          <div className={`mt-12 w-full max-w-[450px] max-h-40 overflow-y-auto no-scrollbar border-l-2 p-5 bg-black/50 backdrop-blur-3xl transition-all duration-500 pointer-events-auto`} style={{ borderColor: `${activeColor}44` }}>
-            {chatMessages.map((msg, i) => (
-              <div key={i} className={`text-[12px] lg:text-[13px] tracking-[0.2em] mb-4 transition-all ${msg.role === 'user' ? 'opacity-30 italic text-right' : 'font-black'}`}>
-                <span className="opacity-20 text-[7px] block mb-1">[{msg.role === 'user' ? 'USER_LINK' : 'STARK_OS'}]</span>
-                {msg.text}
-              </div>
-            ))}
-            <div ref={chatEndRef}></div>
-          </div>
+          {/* O Chat de texto foi removido a pedido do usuário, deixando apenas a interface holográfica do Reator */}
         </div>
       </div>
 
-      {/* 4. Bottom Command (Fast & Clean) */}
+      {/* 4. Bottom Command (Fast & Clean) - Invisível a menos que clicado para casos de emergência */}
       <div className="absolute bottom-10 w-full flex items-center justify-center z-30">
         {showInput ? (
           <form onSubmit={handleSendMessage} className="flex bg-black/95 border-2 p-1 rounded-sm w-[450px] max-w-[90%] shadow-2xl animate-in fade-in zoom-in-95 pointer-events-auto" style={{ borderColor: `${activeColor}44` }}>
