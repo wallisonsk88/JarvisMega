@@ -1,0 +1,18 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/*.wav
+backend/*.mp3
+backend/config.json
+backend/mega_agenda.db
+backend/mega_profile/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
