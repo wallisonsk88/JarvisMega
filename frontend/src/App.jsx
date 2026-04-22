@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 
-// Endereço fixo para evitar erros de rede
+// Endereço fixo da API
 const API_BASE = "http://127.0.0.1:8000";
 
 function App() {
   const [activeTab, setActiveTab] = useState('chat');
   const [showInput, setShowInput] = useState(false);
   
-  // Settings State
+  // Settings State (Full Restoration)
   const [modelType, setModelType] = useState('groq');
   const [apiKey, setApiKey] = useState('');
   const [systemEmail, setSystemEmail] = useState('');
@@ -17,6 +17,7 @@ function App() {
   const [voiceVolume, setVoiceVolume] = useState(1.0);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [baseColor, setBaseColor] = useState('#ff7700'); // Novo: Cor do Tema
   
   // Audio State
   const [audioLevel, setAudioLevel] = useState(0);
@@ -25,7 +26,7 @@ function App() {
 
   // Chat State
   const [chatMessages, setChatMessages] = useState([
-    { role: 'assistant', text: 'PROTOCOLO MEGA EXECUTIVO ATIVADO. AGUARDANDO COMANDOS, SR. WALLISON.' }
+    { role: 'assistant', text: 'MEGA_TURBO v4.8 ONLINE. SISTEMA OTIMIZADO.' }
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -35,7 +36,7 @@ function App() {
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
 
-  // --- Sincronização em Tempo Real ---
+  // --- Sincronização SSE ---
   useEffect(() => {
     let eventSource;
     function connectRadio() {
@@ -43,12 +44,10 @@ function App() {
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
           if (data.type === 'wake_detected') {
             setIsListening(true);
-            setTimeout(() => setIsListening(false), 8000);
+            setTimeout(() => setIsListening(false), 7000);
           }
-          
           if (data.type === 'voice_response') {
             setIsListening(false);
             setIsTyping(false);
@@ -57,7 +56,7 @@ function App() {
           }
         } catch (err) { console.error("[RADIO] Erro:", err); }
       };
-      eventSource.onerror = (err) => {
+      eventSource.onerror = () => {
         eventSource.close();
         setTimeout(connectRadio, 3000);
       };
@@ -66,6 +65,7 @@ function App() {
     return () => { if(eventSource) eventSource.close(); };
   }, []);
 
+  // --- Config Loader ---
   useEffect(() => {
     fetch(`${API_BASE}/api/config`)
       .then(res => res.json())
@@ -85,6 +85,7 @@ function App() {
     });
   }, []);
 
+  // --- Audio Logic ---
   useEffect(() => {
     let audioContext, analyser, source, animationFrame;
     async function startAudio() {
@@ -96,7 +97,7 @@ function App() {
         analyser = audioContext.createAnalyser();
         source = audioContext.createMediaStreamSource(stream);
         source.connect(analyser);
-        analyser.fftSize = 64;
+        analyser.fftSize = 64; 
         audioContextRef.current = audioContext;
         analyserRef.current = analyser;
 
@@ -136,16 +137,15 @@ function App() {
 
   const handleCalibrate = async () => {
     setIsCalibrating(true);
-    setMessage("MAPEANDO FREQUÊNCIAS...");
+    setMessage("ESTABILIZANDO...");
     try {
       const resp = await fetch(`${API_BASE}/api/calibrate`);
       const data = await resp.json();
       if(data.suggested) {
         setSensitivity(data.suggested);
-        setMessage(`ESTABILIZADO!`);
         handleSave(data.suggested);
       }
-    } catch (err) { setMessage('ERRO SISTEMA'); }
+    } catch (err) { setMessage('ERRO_SYNC'); }
     finally { setIsCalibrating(false); setTimeout(() => setMessage(''), 3000); }
   };
 
@@ -157,8 +157,8 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelType, apiKey, systemEmail, systemPassword, sensitivity: s })
       });
-      if (!newSens) setMessage('PROTOCOLO SINCRONIZADO.');
-    } catch (err) { setMessage('ERRO COMUNICAÇÃO'); }
+      if (!newSens) setMessage('SISTEMA_ATUALIZADO.');
+    } catch (err) { setMessage('FALHA_CONEXAO'); }
     if (!newSens) setTimeout(() => setMessage(''), 3000);
   };
 
@@ -184,198 +184,213 @@ function App() {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
-  const themeColor = isListening ? "#ffcc00" : (isCalibrating ? "#00ccff" : (isTyping ? "#ffffff" : "#ff7700"));
+  const activeColor = isListening ? "#ffea00" : (isCalibrating ? "#00e5ff" : (isTyping ? "#ffffff" : baseColor));
 
   return (
-    <div className="min-h-screen bg-black text-orange-500 w-full flex flex-col items-center justify-center p-4 font-mono overflow-hidden select-none border-4 border-orange-950/40 box-border transition-colors duration-200" style={{ color: themeColor }}>
+    <div className="h-screen w-screen bg-black flex flex-col items-center justify-center p-0 font-mono overflow-hidden select-none transition-colors duration-500 relative" style={{ color: activeColor }}>
       
-      {/* JARVIS High-Def Grid */}
-      <div className="fixed inset-0 opacity-[0.15] pointer-events-none transition-all duration-300" style={{
-        backgroundImage: `linear-gradient(${themeColor} 1px, transparent 1px), linear-gradient(90deg, ${themeColor} 1px, transparent 1px)`,
-        backgroundSize: `${30 + (audioLevel/2)}px ${30 + (audioLevel/2)}px`,
-        transform: `perspective(1000px) rotateX(15deg) scale(${1 + (audioLevel/800)})`
-      }}></div>
-
-      {/* Top Header Elite */}
-      <div className="fixed top-4 left-4 right-4 flex justify-between items-start z-20">
-        <div className="space-y-0">
-          <h1 className="text-2xl font-black tracking-widest drop-shadow-[0_0_15px_rgba(255,100,0,0.8)] leading-none transition-colors italic" style={{ color: themeColor }}>MEGA_JARVIS</h1>
-          <div className="flex items-center gap-3 text-[9px] tracking-[0.2em] uppercase font-black mt-2">
-            <span className={`${audioLevel > (sensitivity * 5000) || isListening ? 'animate-pulse text-white' : 'opacity-30'}`}>
-              {isListening ? 'LISTENING_MODE' : (isCalibrating ? 'CALIBRATING' : (audioLevel > (sensitivity * 5000) ? 'ACTIVE_LINK' : 'LINK_STANDBY'))}
-            </span>
-            <div className={`w-2 h-2 rounded-sm ${audioLevel > (sensitivity * 5000) ? 'animate-ping' : 'opacity-10'}`} style={{ backgroundColor: themeColor }}></div>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={() => setActiveTab('chat')} className={`p-3 border-2 rounded-sm transition-all duration-300 backdrop-blur-xl shadow-lg`} style={{ borderColor: `${themeColor}66`, backgroundColor: activeTab === 'chat' ? themeColor : 'rgba(0,0,0,0.5)' }}>
-            <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path></svg>
-          </button>
-          <button onClick={() => setActiveTab('settings')} className={`p-3 border-2 rounded-sm transition-all duration-300 backdrop-blur-xl shadow-lg`} style={{ borderColor: `${themeColor}66`, backgroundColor: activeTab === 'settings' ? themeColor : 'rgba(0,0,0,0.5)' }}>
-            <svg className="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20"><path d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106a1.532 1.532 0 01-2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"></path></svg>
-          </button>
-        </div>
+      {/* 1. Optimized Data Layer (Fewer elements) */}
+      <div className="absolute inset-0 pointer-events-none opacity-20">
+        {[...Array(12)].map((_, i) => (
+           <div key={i} className="absolute text-[8px] font-black animate-float" style={{
+             left: `${Math.random() * 100}%`,
+             top: `${Math.random() * 100}%`,
+             animationDelay: `${Math.random() * 8}s`,
+             opacity: 0.3,
+             willChange: 'transform'
+           }}>
+             {activeColor}
+           </div>
+        ))}
       </div>
 
-      {activeTab === 'chat' && (
-        <div className="relative flex flex-col items-center justify-center transition-all duration-1000 mt-12 scale-105">
+      {/* 2. Top-Right Discrete Icon */}
+      <div className="absolute top-8 right-8 z-50">
+        <button 
+          onClick={() => setActiveTab(activeTab === 'settings' ? 'chat' : 'settings')}
+          className="p-3 opacity-20 hover:opacity-100 transition-all duration-300 hover:rotate-90"
+        >
+          <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* 3. Main Reactor (Optimized 3 Rings) */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="relative flex flex-col items-center justify-center p-4">
           
-          {/* Data Streaks (Particles) */}
-          <div className="absolute inset-[-200px] pointer-events-none opacity-60">
-             {[...Array(15)].map((_, i) => (
-               <div key={i} className="absolute w-[1px] h-[30px] rounded-full animate-streak" style={{
-                 backgroundColor: themeColor,
-                 left: `${Math.random() * 100}%`,
-                 top: `${Math.random() * 100}%`,
-                 animationDelay: `${Math.random() * 2}s`,
-                 boxShadow: `0 0 15px ${themeColor}`,
-                 opacity: Math.random()
-               }}></div>
-             ))}
-          </div>
-
-          <div className="relative w-80 h-80 flex items-center justify-center">
-            
-            {/* Scientific Rings Layer 1 (Outer) */}
-            <svg className="absolute inset-[-40px] w-[calc(100%+80px)] h-[calc(100%+80px)] animate-[spin_60s_linear_infinite] opacity-30">
-              <circle cx="50%" cy="50%" r="48%" fill="none" stroke={themeColor} strokeWidth="1" strokeDasharray="1 10" />
-            </svg>
-
-            {/* Scientific Rings Layer 2 (Mechanical) */}
-            <svg className="absolute inset-[-20px] w-[calc(100%+40px)] h-[calc(100%+40px)] animate-[spin_20s_linear_infinite_reverse] opacity-50">
-               <circle cx="50%" cy="50%" r="46%" fill="none" stroke={themeColor} strokeWidth="2" strokeDasharray="30 150" />
-               <circle cx="50%" cy="50%" r="46%" fill="none" stroke="#fff" strokeWidth="1" strokeDasharray="5 300" className="opacity-40" />
-            </svg>
-
-            {/* Core Glow Pulse (JARVIS ARC REACTOR STYLE) */}
-            <div className={`absolute inset-0 rounded-full blur-[40px] opacity-20 transition-all duration-300`} style={{ backgroundColor: themeColor, transform: `scale(${1.2 + (audioLevel/100)})` }}></div>
-            
-            {/* The Main Reactor Core */}
-            <div 
-              className={`absolute w-36 h-36 rounded-full flex flex-col items-center justify-center border-4 transition-all duration-150 z-10 ${
-                isListening ? 'animate-ping scale-150 shadow-[0_0_150px_rgba(255,150,0,0.9)]' : ''
-              }`}
-              style={{ 
-                transform: `scale(${1 + (audioLevel / 180)})`,
-                borderColor: themeColor,
-                boxShadow: `0 0 ${70 + audioLevel}px ${themeColor}, inset 0 0 30px ${themeColor}aa`,
-                background: `radial-gradient(circle, ${themeColor}22 0%, #000 80%)`
-              }}
-            >
-              <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.4)_0%,transparent_60%)] opacity-30"></div>
+          <div className="relative w-72 h-72 sm:w-80 sm:h-80 lg:w-[450px] lg:h-[450px] flex items-center justify-center pointer-events-auto">
               
-              {/* Inner Reactor Design */}
-              <div className="absolute inset-4 border border-white/20 rounded-full"></div>
-              <div className="absolute inset-8 border border-white/10 rounded-full animate-pulse"></div>
+              {/* Outer Detail Ring */}
+              <svg className="absolute w-[115%] h-[115%] animate-[spin_60s_linear_infinite] opacity-10" style={{ willChange: 'transform'}}>
+                <circle cx="50%" cy="50%" r="48%" fill="none" stroke={activeColor} strokeWidth="1" strokeDasharray="1 15" />
+              </svg>
 
-              <span className={`text-3xl font-black tracking-[-0.1em] transition-colors drop-shadow-[0_0_15px_#fff] ${isTyping || isListening ? 'animate-pulse text-white' : ''}`}>MEGA</span>
-              
-              {/* Radial Signal Reactivity */}
-              <div className="absolute inset-[-15px] opacity-40">
-                {[...Array(12)].map((_, i) => (
-                  <div key={i} className="absolute w-[2px] h-[8px] bg-white" style={{
+              {/* Precise Ring (Optimized: Fewer rects) */}
+              <svg className="absolute w-[105%] h-[105%] animate-[spin_18s_linear_infinite_reverse] opacity-40" style={{ willChange: 'transform' }}>
+                <circle cx="50%" cy="50%" r="46%" fill="none" stroke={activeColor} strokeWidth="2" strokeDasharray="10 80" />
+                <circle cx="50%" cy="50%" r="46%" fill="none" stroke={activeColor} strokeWidth="0.5" strokeDasharray="1 4" className="opacity-20" />
+              </svg>
+
+              {/* Core Arc Reactor (Optimized Shadows) */}
+              <div 
+                className={`absolute w-36 h-36 sm:w-48 sm:h-48 lg:w-56 lg:h-56 rounded-full flex flex-col items-center justify-center border-4 transition-all duration-300 z-20 ${
+                  isListening ? 'animate-pulse scale-105' : ''
+                }`}
+                style={{ 
+                  transform: `scale(${1 + (audioLevel / 180)})`,
+                  borderColor: activeColor,
+                  boxShadow: `0 0 ${40 + audioLevel}px ${activeColor}99`,
+                  background: `radial-gradient(circle, ${activeColor}22 0%, #000 90%)`,
+                  willChange: 'transform'
+                }}
+              >
+                <div className="absolute inset-0 bg-white/5 opacity-30 mix-blend-overlay"></div>
+                <h2 className={`text-4xl sm:text-5xl lg:text-7xl font-black tracking-tighter transition-all`} style={{ filter: `drop-shadow(0 0 10px ${activeColor})` }}>MEGA</h2>
+                <div className="text-[7px] lg:text-[10px] font-bold opacity-30 mt-2 uppercase tracking-[0.8em]">TURBO_v4.8</div>
+              </div>
+
+              {/* Responsive Particles (Reduced Count) */}
+              <div className="absolute inset-0 z-10 pointer-events-none">
+                {[...Array(18)].map((_ , i) => (
+                  <div key={i} className="absolute w-[2px] rounded-full transition-all duration-75" style={{ 
+                    backgroundColor: activeColor,
+                    height: `${8 + (audioLevel/6)}px`,
                     left: '50%',
-                    top: '0',
-                    transformOrigin: '50% 110px',
-                    transform: `rotate(${i * 30}deg) scaleY(${1 + (audioLevel/100)})`,
-                    opacity: audioLevel / 255
+                    top: '50%',
+                    transform: `rotate(${i * 20}deg) translateY(-110px)`,
+                    opacity: 0.1 + (audioLevel/255)
                   }}></div>
                 ))}
               </div>
-            </div>
-            
-            {/* Technical HUD Overlays */}
-            <div className="absolute w-full h-full animate-[spin_10s_linear_infinite] opacity-60">
-               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1px] h-full bg-gradient-to-b from-transparent via-current to-transparent" style={{ color: themeColor }}></div>
-               <div className="absolute left-0 top-1/2 -translate-y-1/2 h-[1px] w-full bg-gradient-to-r from-transparent via-current to-transparent" style={{ color: themeColor }}></div>
-            </div>
           </div>
 
-          {/* JARVIS Console Log (High Contrast) */}
-          <div className="mt-20 w-[420px] h-32 overflow-y-auto no-scrollbar space-y-4 px-6 py-4 border-l-2 bg-black/80 backdrop-blur-sm" style={{ borderColor: themeColor }}>
+          {/* Chat Stream (Clean Layout) */}
+          <div className={`mt-12 w-full max-w-[450px] max-h-40 overflow-y-auto no-scrollbar border-l-2 p-5 bg-black/50 backdrop-blur-3xl transition-all duration-500 pointer-events-auto`} style={{ borderColor: `${activeColor}44` }}>
             {chatMessages.map((msg, i) => (
-              <div key={i} className={`text-[12px] tracking-[0.2em] leading-relaxed transition-all duration-300 ${msg.role === 'user' ? 'text-white/40 italic text-right' : 'text-white font-bold'}`}>
-                 <span className="opacity-40 text-[9px] mr-2">[{msg.role === 'user' ? 'SIGNAL_IN' : 'COMMS_OUT'}]</span> {msg.text}
+              <div key={i} className={`text-[12px] lg:text-[13px] tracking-[0.2em] mb-4 transition-all ${msg.role === 'user' ? 'opacity-30 italic text-right' : 'font-black'}`}>
+                <span className="opacity-20 text-[7px] block mb-1">[{msg.role === 'user' ? 'USER_LINK' : 'STARK_OS'}]</span>
+                {msg.text}
               </div>
             ))}
             <div ref={chatEndRef}></div>
           </div>
         </div>
-      )}
+      </div>
 
-      {activeTab === 'settings' && (
-        <div className="z-10 bg-black/95 border-2 p-8 rounded-sm w-[380px] h-[480px] overflow-y-auto no-scrollbar backdrop-blur-3xl shadow-[0_0_80px_#000] relative mt-4 scale-95 transition-all scroll-smooth" style={{ borderColor: themeColor }}>
-          <div className="absolute top-2 left-2 text-[6px] opacity-30 font-black">STARK_INDUSTRIES // MK_42</div>
-          <h2 className="text-xl font-black mb-10 border-b-2 pb-4 tracking-[0.5em] text-center uppercase drop-shadow-md" style={{ borderColor: `${themeColor}44` }}>OS_CONFIG</h2>
-          
-          <div className="space-y-10 text-[11px] font-black uppercase tracking-[0.3em]">
-            
-            <button onClick={handleCalibrate} disabled={isCalibrating} className={`w-full py-4 border-2 transition-all relative overflow-hidden group`} style={{ borderColor: themeColor }}>
-              <div className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-0 bg-white/10 transition-transform duration-500"></div>
-              <span className={isCalibrating ? 'animate-pulse text-white' : ''}>{isCalibrating ? 'LINKING_BIOMETRICS...' : 'CALIBRAR_MÓDULOS'}</span>
-            </button>
-
-            <div className="space-y-4 pt-6 border-t border-white/10">
-              <label className="text-[9px] opacity-40">AI_KERNEL_TYPE</label>
-              <select value={modelType} onChange={e => setModelType(e.target.value)} className="w-full bg-black border-2 p-3 text-white outline-none focus:border-white transition-colors" style={{ borderColor: `${themeColor}22` }}>
-                <option value="groq">GROQ_ENGINE (TURBO)</option>
-                <option value="openai">GPT_ENGINE (COMPLEX)</option>
-              </select>
-              
-              <label className="text-[9px] opacity-40 mt-4 block">ACCESS_ENCRYPTION_KEY</label>
-              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="w-full bg-black border-2 p-3 text-white outline-none focus:border-white" style={{ borderColor: `${themeColor}22` }} />
-            </div>
-
-            <div className="space-y-8 pt-6 border-t border-white/10">
-              <div className="space-y-4">
-                <label className="text-[9px] opacity-40">AUDIO_OUTPUT: {(voiceVolume * 100).toFixed(0)}%</label>
-                <input type="range" min="0" max="1" step="0.05" value={voiceVolume} onChange={e => setVoiceVolume(parseFloat(e.target.value))} className="w-full h-1 bg-white/10 accent-white appearance-none cursor-pointer" />
-              </div>
-              <div className="space-y-4">
-                <label className="text-[9px] opacity-40">MIC_SENSITIVITY: {((1 - (sensitivity / 0.01)) * 100).toFixed(0)}%</label>
-                <input type="range" min="0.0005" max="0.008" step="0.0005" value={sensitivity} onChange={e => setSensitivity(parseFloat(e.target.value))} className="w-full h-1 bg-white/10 accent-white rotate-180 appearance-none cursor-pointer" />
-              </div>
-            </div>
-
-            <div className="sticky bottom-0 pt-8 bg-black pb-4 border-t border-white/10">
-              <button onClick={() => handleSave()} className="w-full text-black font-black py-5 shadow-2xl transform active:scale-95 transition-all text-[14px]" style={{ backgroundColor: themeColor }}>ESTABELECER_LINK</button>
-            </div>
-            {message && <p className="text-center animate-bounce mt-4 text-[10px] font-black text-white">{`>> ${message}`}</p>}
-          </div>
-        </div>
-      )}
-
-      {/* JARVIS Tactical Input */}
-      <div className="fixed bottom-12 z-30">
+      {/* 4. Bottom Command (Fast & Clean) */}
+      <div className="absolute bottom-10 w-full flex items-center justify-center z-30">
         {showInput ? (
-          <form onSubmit={handleSendMessage} className="flex gap-2 bg-black/90 border-2 p-2 rounded-sm shadow-[0_0_60px_#000] w-[420px] animate-in zoom-in-95 duration-200" style={{ borderColor: themeColor }}>
-            <input autoFocus type="text" value={inputMessage} onChange={e => setInputMessage(e.target.value)} placeholder="DIRECT_OVERRIDE..." className="bg-transparent px-6 py-4 flex-1 outline-none text-[13px] placeholder:text-white/20 uppercase font-black tracking-[0.3em] text-white"/>
-            <button type="submit" className="text-black px-8 font-black text-[13px] hover:bg-white transition-all shadow-inner" style={{ backgroundColor: themeColor }}>SEND</button>
-            <button type="button" onClick={() => setShowInput(false)} className="px-4 opacity-40 hover:opacity-100 text-2xl font-light transition-opacity">×</button>
+          <form onSubmit={handleSendMessage} className="flex bg-black/95 border-2 p-1 rounded-sm w-[450px] max-w-[90%] shadow-2xl animate-in fade-in zoom-in-95 pointer-events-auto" style={{ borderColor: `${activeColor}44` }}>
+            <input autoFocus type="text" value={inputMessage} onChange={e => setInputMessage(e.target.value)} placeholder="STARK_OVERRIDE..." className="bg-transparent px-5 py-4 flex-1 outline-none text-[13px] uppercase font-black tracking-[0.3em] text-white"/>
+            <button type="submit" className="px-8 font-black text-black" style={{ backgroundColor: activeColor }}>OK</button>
+            <button type="button" onClick={() => setShowInput(false)} className="px-3 opacity-50 text-2xl">×</button>
           </form>
         ) : (
-          <button onClick={() => setShowInput(true)} className="group relative p-8 border-2 bg-black/20 hover:bg-white/5 transition-all overflow-hidden" style={{ borderColor: `${themeColor}44` }}>
-            <div className="absolute inset-0 bg-white/5 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-300"></div>
-            <svg className="w-8 h-8 transition-transform group-hover:scale-125" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: themeColor }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-            <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2" style={{ borderColor: themeColor }}></div>
-            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2" style={{ borderColor: themeColor }}></div>
+          <button onClick={() => setShowInput(true)} className="p-4 opacity-20 hover:opacity-100 transition-all duration-500 transform hover:scale-110 pointer-events-auto">
+            <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+            </svg>
           </button>
         )}
       </div>
 
-      {/* CRT Scan & Noise Overlays */}
-      <div className="fixed inset-0 pointer-events-none z-50 opacity-[0.04] pointer-events-none mix-blend-overlay">
-        <div className="w-full h-full bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.5)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,4px_100%]"></div>
-      </div>
+      {/* 5. Settings: Full Restoration (7 Essential Controls) */}
+      {activeTab === 'settings' && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-3xl animate-in zoom-in-95 duration-200 p-8">
+          <div className="bg-black/95 border-4 w-full max-w-md h-[90vh] p-8 relative flex flex-col" style={{ borderColor: activeColor }}>
+            <button onClick={() => setActiveTab('chat')} className="absolute top-4 right-4 text-2xl font-light hover:rotate-90 transition-transform">X</button>
+            <h2 className="text-xl font-black mb-6 tracking-[0.4em] uppercase text-center mt-2">Core_Settings</h2>
+            
+            <div className="flex-1 overflow-y-auto no-scrollbar space-y-6 text-[11px] font-black uppercase tracking-[0.2em] pr-2">
+               
+               {/* 1. Calibração */}
+               <button onClick={handleCalibrate} disabled={isCalibrating} className="w-full py-4 border-2 transition-all hover:bg-white hover:text-black" style={{ borderColor: activeColor }}>
+                  {isCalibrating ? 'RECONHECENDO FREQUÊNCIAS...' : 'CALIBRAR MICROFONE'}
+               </button>
+               
+               {/* 2. Seleção de Motor */}
+               <div className="space-y-2">
+                 <label className="text-[9px] opacity-40">Motor de IA (Model Kernel)</label>
+                 <select value={modelType} onChange={e => setModelType(e.target.value)} className="w-full bg-black border-2 border-white/10 p-3 outline-none focus:border-white transition-colors">
+                   <option value="groq">GROQ_ENGINE (TURBO)</option>
+                   <option value="openai">GPT_ENGINE (COMPLEX)</option>
+                 </select>
+               </div>
+
+               {/* 3. API Key */}
+               <div className="space-y-2">
+                 <label className="text-[9px] opacity-40">Access Key (Token)</label>
+                 <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="w-full bg-black border-2 border-white/10 p-3 outline-none" placeholder="**********" />
+               </div>
+
+               {/* 4. Credentials */}
+               <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-2">
+                   <label className="text-[9px] opacity-40">System Email</label>
+                   <input type="text" value={systemEmail} onChange={e => setSystemEmail(e.target.value)} className="w-full bg-black border-2 border-white/10 p-3 outline-none text-[9px]" placeholder="admin@mega.com" />
+                 </div>
+                 <div className="space-y-2">
+                   <label className="text-[9px] opacity-40">System Password</label>
+                   <input type="password" value={systemPassword} onChange={e => setSystemPassword(e.target.value)} className="w-full bg-black border-2 border-white/10 p-3 outline-none" placeholder="******" />
+                 </div>
+               </div>
+
+               {/* 5. Audio & Sensibility Sliders */}
+               <div className="space-y-6 border-t border-white/5 pt-4">
+                 <div className="space-y-3">
+                   <div className="flex justify-between items-center text-[9px]">
+                      <label className="opacity-40">Volume da Voz</label>
+                      <span>{(voiceVolume * 100).toFixed(0)}%</span>
+                   </div>
+                   <input type="range" min="0" max="1" step="0.05" value={voiceVolume} onChange={e => setVoiceVolume(parseFloat(e.target.value))} className="w-full h-1 bg-white/10 accent-white appearance-none cursor-pointer" />
+                 </div>
+                 <div className="space-y-3">
+                   <div className="flex justify-between items-center text-[9px]">
+                      <label className="opacity-40">Sensibilidade do Gatilho</label>
+                      <span>{((1 - (sensitivity / 0.01)) * 100).toFixed(0)}%</span>
+                   </div>
+                   <input type="range" min="0.0005" max="0.008" step="0.0005" value={sensitivity} onChange={e => setSensitivity(parseFloat(e.target.value))} className="w-full h-1 bg-white/10 accent-white rotate-180 appearance-none cursor-pointer" />
+                 </div>
+               </div>
+
+               {/* 6. Mic Selector */}
+               <div className="space-y-2">
+                 <label className="text-[9px] opacity-40">Interface de Escuta (Mic)</label>
+                 <select value={selectedMic} onChange={e => setSelectedMic(e.target.value)} className="w-full bg-black border-2 border-white/10 p-3 text-[10px] outline-none">
+                    <option value="default">DISPOSITIVO PADRÃO</option>
+                    {availableMics.map(m => <option key={m.deviceId} value={m.deviceId}>{m.label}</option>)}
+                 </select>
+               </div>
+
+               {/* 7. Theme Color Picker */}
+               <div className="space-y-2">
+                  <label className="text-[9px] opacity-40">Cor do Protocolo JARVIS</label>
+                  <div className="flex gap-2">
+                     {['#ff7700', '#00ffcc', '#ff2a00', '#0088ff', '#ffffff'].map(c => (
+                       <button key={c} onClick={() => setBaseColor(c)} className={`w-8 h-8 border-2 ${baseColor === c ? 'border-white' : 'border-transparent'}`} style={{ backgroundColor: c }}></button>
+                     ))}
+                  </div>
+               </div>
+            </div>
+
+            <button onClick={() => handleSave()} className="w-full py-4 mt-6 font-black shadow-2xl transition-all active:scale-95" style={{ backgroundColor: activeColor, color: '#000' }}>SALVAR_CONFIGURAÇÕES</button>
+            {message && <p className="text-center animate-bounce mt-2 text-[10px] font-black">{`>> ${message}`}</p>}
+          </div>
+        </div>
+      )}
 
       <style>{`
-        @keyframes streak {
-          0% { transform: translateY(-100px) scaleY(0); opacity: 0; }
-          50% { opacity: 1; transform: translateY(0) scaleY(1.5); }
-          100% { transform: translateY(200px) scaleY(0); opacity: 0; }
-        }
-        .animate-streak { animation: streak 2.5s ease-in-out infinite; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .animate-float { animation: float 8s linear infinite; }
+        @keyframes float {
+          0% { transform: translateY(0); opacity: 0; }
+          20% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { transform: translateY(-30vh); opacity: 0; }
+        }
       `}</style>
     </div>
   );
